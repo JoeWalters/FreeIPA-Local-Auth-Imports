@@ -18,19 +18,22 @@
 
 ## Variables
 # Password file to read
-PASSWORD=/root/passwd.azure
+PASSWORD=/root/passwd.oldhost
 
 # Shadow file to read. This must at least have read permissions (default shadow does not)
-SHADOW=/root/master.passwd
+SHADOW=/root/shadow.oldhost
 
 # Group file to read.
-GROUP=/root/group.azure
+GROUP=/root/group.oldhost
 
 # FreeIPA administrative account
 IPAADMIN=admin
 
 # Exclude these users
 EXCUSERS=('nfsnobody','nobody')
+
+# Lowest non-system account uid
+LOWERBOUND=1000
 
 create_users() {
   IFS=$'\n'
@@ -133,8 +136,8 @@ echo kinit $IPAADMIN
 #ipa config-mod --enable-migration=true
 echo ipa config-mod --enable-migration=true
 
-SORTED=$(grep -v '^#' $PASSWORD | awk -F: '$3 > 999 {print}')
-GROUPSORT=$(grep -v '^#' $GROUP | awk -F: '$3 > 999 {print}')
+SORTED=$(grep -v '^#' $PASSWORD | awk -F: -v LOWERBOUND=$LOWERBOUND '$3 > LOWERBOUND {print}')
+GROUPSORT=$(grep -v '^#' $GROUP | awk -F: -v LOWERBOUND=$LOWERBOUND '$3 > LOWERBOUND {print}')
 PVTGROUPS=$(grep -v '^#' $GROUP | awk -F: '$4 ~ /^$/ {print $3}')
 #echo $PVTGROUPS;exit
 
