@@ -32,6 +32,9 @@ IPAADMIN=admin
 # Exclude these users
 EXCUSERS=('nfsnobody','nobody')
 
+# Include these groups even if they have no members
+INCPVTGPS=('wheel') # For RHEL systems where root's primary group is root but wheel exists with no members
+
 # Lowest non-system account uid
 LOWERBOUND=1000
 
@@ -57,7 +60,8 @@ create_users() {
 
     GID=$(echo $line | cut -d: -f4)
 
-    [[ $UUID =~ 00$ ]] && GIDOPT=--noprivate || GIDOPT=""
+# Special code for a special circumstance
+#    [[ $UUID =~ 00$ ]] && GIDOPT=--noprivate || GIDOPT=""
 
     FIRST=$(echo $line | cut -d: -f5 | awk {'print $1'})
     if [ -z "$FIRST" ] ; then
@@ -97,8 +101,15 @@ create_groups() {
     GID=$(cut -d: -f3 <<< $line)
     CONT=0
     for f in $PVTGROUPS ; do
-      [[ $f =~ 00$ ]] && continue
-      [[ $GID -eq $f ]] && CONT=1
+        USER=$(echo $line | cut -d: -f1)
+    # Skip this iteration of the loop if this user was excluded
+        for i in "${INCPVTGPS[@]}" ; do
+            [[ $GROUP == "$i"* ]]
+            CONT=$?
+        done
+        if [[ $CONT -eq 1 ]] ; then
+            continue
+        fi
     done
     [[ CONT -eq 1 ]] && continue
     #ipa group-add $GROUP --gid=$GID --desc=$GROUP
