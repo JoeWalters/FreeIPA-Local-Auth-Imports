@@ -15,28 +15,32 @@
 # https://shellonearth.net/import-local-accounts-in-freeipa-rhelcentos/
 
 
-
 ## Variables
-# Password file to read
-PASSWORD=/root/passwd.oldhost
 
-# Shadow file to read. This must at least have read permissions (default shadow does not)
-SHADOW=/root/shadow.oldhost
+# Base directory of files to read
+DIR=/root/FreeIPA-Local-Auth-Imports
+
+# Password file to read
+PASSWORD=$DIR/passwd
+
+# Shadow file to read. This must at least have read permissions (default shadow on RHEL does not)
+SHADOW=$DIR/shadow
 
 # Group file to read.
-GROUP=/root/group.oldhost
+GROUP=$DIR/group
 
 # FreeIPA administrative account
 IPAADMIN=admin
 
 # Exclude these users
-EXCUSERS=('nfsnobody','nobody')
+declare -a EXCUSERS
+EXCUSERS=('nfsnobody' 'nobody' 'admin' 'managedcare')
 
 # Include these groups even if they have no members
-INCPVTGPS=('wheel') # For RHEL systems where root's primary group is root but wheel exists with no members
+#INCPVTGPS=('wheel') # For RHEL systems where root's primary group is root but wheel exists with no members
 
 # Lowest non-system account uid
-LOWERBOUND=1000
+MINUID=1000
 
 create_users() {
   IFS=$'\n'
@@ -45,11 +49,11 @@ create_users() {
 
     USER=$(echo $line | cut -d: -f1)
     # Skip this iteration of the loop if this user was excluded
-    for i in "${EXCUSERS[@]}" ; do
-      if [[ $line == "$i"* ]] ; then
+    CONT=0
+    for i in ${EXCUSERS[@]} ; do
+      if [[ "$USER" == "$i" ]] ; then
         CONT=1
-      else
-        CONT=0
+	echo "# Excluding $USER"
       fi
     done
     if [[ $CONT -eq 1 ]] ; then
@@ -61,7 +65,7 @@ create_users() {
     GID=$(echo $line | cut -d: -f4)
 
 # Special code for a special circumstance
-#    [[ $UUID =~ 00$ ]] && GIDOPT=--noprivate || GIDOPT=""
+    [[ $UUID =~ 00$ ]] && GIDOPT=--noprivate || GIDOPT=""
 
     FIRST=$(echo $line | cut -d: -f5 | awk {'print $1'})
     if [ -z "$FIRST" ] ; then
@@ -99,19 +103,20 @@ create_groups() {
   for line in $GROUPSORT ; do
     GROUP=$(cut -d: -f1 <<< $line)
     GID=$(cut -d: -f3 <<< $line)
-    CONT=0
-    for f in $PVTGROUPS ; do
-        USER=$(echo $line | cut -d: -f1)
-    # Skip this iteration of the loop if this user was excluded
-        for i in "${INCPVTGPS[@]}" ; do
-            [[ $GROUP == "$i"* ]]
-            CONT=$?
-        done
-        if [[ $CONT -eq 1 ]] ; then
-            continue
-        fi
+    PVT=0
+    for g in $PVTGROUPS ; do
+      [[ $GID -eq $g ]] && PVT=1 
     done
-    [[ CONT -eq 1 ]] && continue
+    CONT=$PVT
+    if [[ -n "${INCPVTGPS[@]}" && $PVT -eq 1 ]] ; then
+    # Skip this iteration of the loop if this user was excluded
+      for i in ${INCPVTGPS[@]} ; do
+        [[ $GROUP == "$i"* ]] && CONT=0
+      done
+    fi
+    if [[ $CONT -eq 1 ]] ; then
+      continue
+    fi
     #ipa group-add $GROUP --gid=$GID --desc=$GROUP
     echo ipa group-add $GROUP --gid=$GID --desc=$GROUP
   done
@@ -147,8 +152,8 @@ echo kinit $IPAADMIN
 #ipa config-mod --enable-migration=true
 echo ipa config-mod --enable-migration=true
 
-SORTED=$(grep -v '^#' $PASSWORD | awk -F: -v LOWERBOUND=$LOWERBOUND '$3 > LOWERBOUND {print}')
-GROUPSORT=$(grep -v '^#' $GROUP | awk -F: -v LOWERBOUND=$LOWERBOUND '$3 > LOWERBOUND {print}')
+SORTED=$(grep -v '^#' $PASSWORD | awk -F: -v MINUID=$MINUID '$3 > MINUID {print}')
+GROUPSORT=$(grep -v '^#' $GROUP | awk -F: -v MINUID=$MINUID '$3 > MINUID {print}')
 PVTGROUPS=$(grep -v '^#' $GROUP | awk -F: '$4 ~ /^$/ {print $3}')
 #echo $PVTGROUPS;exit
 
